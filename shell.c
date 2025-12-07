@@ -7,12 +7,25 @@
 
 // Things to do
 // Parsing
-// strip logic
+// strip logic -> done
 // Argument parsing including quoted strings
 // I/O redirection (<, >)
 // Built-ins: cd, exit
 // Handling ctrl+c
 // handle exit -> done
+
+// strip quotes
+void strip_quotes(char **args) {
+    for (int j = 0; args[j]; j++) {
+        if (args[j][0] == '\"') {
+            size_t len = strlen(args[j]) - 1;
+            if (len > 1 && args[j][len - 1] == '\"') {
+                args[j][len - 1] = '\0'; // Overwrite it with null terminator
+            }
+            args[j] = args[j] + 1;
+        }
+    }
+}
 
 // Parsing
 int parse_input(char* input, char** args){
@@ -47,8 +60,16 @@ int main(){
     while(1){
     printf("myshell> ");
     ssize_t nread = getline(&input, &len, stdin);
+    if (nread == -1) {
+            break;
+    }
+    if (input[nread - 1] == '\n') {
+        input[nread - 1] = '\0';
+    }
     // tokenize -> convert and store it into array
     int i = parse_input(input, args);
+    // strip quotes
+    strip_quotes(args);
     if (strcmp(args[0], "exit\n") == 0) {
         break;
     }
