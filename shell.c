@@ -17,16 +17,14 @@
 // strip quotes
 void strip_quotes(char **args) {
     for (int j = 0; args[j]; j++) {
-        if (args[j][0] == '\"') {
-            size_t len = strlen(args[j]) - 1;
-            if (len > 1 && args[j][len - 1] == '\"') {
-                args[j][len - 1] = '\0'; // Overwrite it with null terminator
-            }
-            args[j] = args[j] + 1;
+        char *s = args[j];
+        size_t len = strlen(s);
+        if (len >= 2 && s[0] == '\"' && s[len - 1] == '\"') {
+            s[len - 1] = '\0';   
+            args[j] = s + 1;     
         }
     }
 }
-
 // Parsing
 int parse_input(char* input, char** args){
     int i = 0;
@@ -70,7 +68,7 @@ int main(){
     int i = parse_input(input, args);
     // strip quotes
     strip_quotes(args);
-    if (strcmp(args[0], "exit\n") == 0) {
+    if (strcmp(args[0], "exit") == 0) {
         break;
     }
 
