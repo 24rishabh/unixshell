@@ -8,10 +8,10 @@
 #define MAX_ARGS 10
 
 // Things to do
-// Parsing
+// Parsing -> done
 // strip logic -> done
-// Argument parsing including quoted strings
-// I/O redirection (<, >) 
+// Argument parsing including quoted strings -> done
+// I/O redirection (<, >) -> done
 // Built-ins: cd, exit -> done
 // Handling ctrl+c
 // handle exit -> done
@@ -54,6 +54,13 @@ int parse_input(char* input, char** args){
     return i;
 }
 
+// ctrl + c
+void handler(int sig) {
+    printf("\n");
+}
+
+
+// handling Input and output redirection
 int handle_redirection(char **args) {
     int j = 0;
     while (args[j] != NULL) {
@@ -106,6 +113,8 @@ int main(){
     char* input = NULL;
     size_t len = 0;
     char *args[MAX_ARGS];
+    // handling ctrl+c
+    signal(SIGINT, handler);
     // get the input from command line
     while(1){
     printf("myshell> ");
@@ -139,8 +148,16 @@ int main(){
     }
     printf("%d\n",i);
     for (int j = 0; args[j] != NULL; j++) {
-        printf("arg[%d] = %s\n", j, args[j]);
+        printf("args[%d] = %s\n", j, args[j]);
     }
+    // checking for redirection function
+    // char *args[] = {"somecommand", ">", "out.txt", NULL};
+
+    // if (handle_redirection(args) != 0) {
+    //     fprintf(stderr, "handle_redirection failed\n");
+    //     return 1;
+    // }
+    // printf("Hello from redirected stdout!\n");
 }
 
 }
