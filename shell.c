@@ -2,6 +2,7 @@
 #include <stdlib.h>    
 #include <sys/types.h>
 #include <string.h>
+#include <unistd.h>
 
 #define MAX_ARGS 10
 
@@ -10,11 +11,14 @@
 // strip logic -> done
 // Argument parsing including quoted strings
 // I/O redirection (<, >)
-// Built-ins: cd, exit
+// Built-ins: cd, exit -> done
 // Handling ctrl+c
 // handle exit -> done
+// improving parsing and strip logic
+// handling enter -> done
 
-// strip quotes
+
+// strip quotes 
 void strip_quotes(char **args) {
     for (int j = 0; args[j]; j++) {
         char *s = args[j];
@@ -71,10 +75,23 @@ int main(){
     if (strcmp(args[0], "exit") == 0) {
         break;
     }
-
+    // handling enter
+    if (args[0][0] == '\0') {
+        continue;
+    }
+    // handling cd
+    if (strcmp(args[0], "cd") == 0) {
+        if (args[1] == NULL) {
+            fprintf(stderr, "cd: missing argument\n");
+        } 
+        else if (chdir(args[1]) != 0) {
+            perror("cd");
+        }
+    continue;
+    }
     printf("%d\n",i);
     for (int j = 0; args[j] != NULL; j++) {
-    printf("arg[%d] = %s\n", j, args[j]);
+        printf("arg[%d] = %s\n", j, args[j]);
     }
 }
 
