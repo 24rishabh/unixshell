@@ -24,6 +24,7 @@ volatile sig_atomic_t is_waiting_for_input = 0;
 
 // handling ctrl+c
 void handler(int sig) {
+    (void)sig; 
     const char msg_nl[] = "\n";
     write(STDOUT_FILENO, msg_nl, sizeof(msg_nl) - 1);
 
