@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #define MAX_ARGS 10
 
@@ -10,7 +11,7 @@
 // Parsing
 // strip logic -> done
 // Argument parsing including quoted strings
-// I/O redirection (<, >)
+// I/O redirection (<, >) 
 // Built-ins: cd, exit -> done
 // Handling ctrl+c
 // handle exit -> done
@@ -52,6 +53,53 @@ int parse_input(char* input, char** args){
     args[i] = NULL;
     return i;
 }
+
+int handle_redirection(char **args) {
+    int j = 0;
+    while (args[j] != NULL) {
+        if (strcmp(args[j], ">") == 0) {
+            if (args[j+1] == NULL) {
+                fprintf(stderr, "Expected filename after '>'\n");
+                return -1;
+            }
+            int fd = open(args[j+1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd < 0) {
+                perror("open failed");
+                return -1;
+            }
+            if (dup2(fd, STDOUT_FILENO) < 0) {
+                perror("dup2 failed");
+                close(fd);
+                return -1;
+            }
+            close(fd);
+            args[j] = NULL;      // terminate argv here for execvp
+        }
+        else if (strcmp(args[j], "<") == 0) {
+            if (args[j+1] == NULL) {
+                fprintf(stderr, "Expected filename after '<'\n");
+                return -1;
+            }
+            int fd = open(args[j+1], O_RDONLY);
+            if (fd < 0) {
+                perror("open failed");
+                return -1;
+            }
+            if (dup2(fd, STDIN_FILENO) < 0) {
+                perror("dup2 failed");
+                close(fd);
+                return -1;
+            }
+            close(fd);
+            args[j] = NULL;      // terminate argv here
+        }
+
+        j++;
+    }
+    return 0;
+}
+
+
 
 int main(){
     // Initialization of buffer and lengths
