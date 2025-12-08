@@ -14,8 +14,8 @@
 TODO LIST:
 1. I/O redirection: < and >   <--------DONE
 2. Pipelines: cmd1 | cmd2     <--------DONE
-3. Background: &
-4. Ctrl-C handling
+3. Background: &              <--------DONE
+4. Ctrl-C handling            
 */
 
 void ArgParser(char *input,char *args[]){
@@ -53,7 +53,7 @@ void ArgParser(char *input,char *args[]){
     args[i] = NULL;
 }
 
-bool handlePipeline(char *args[]){
+bool handlePipeline(char *args[],bool background){
     int pipePos = -1;
     for(int i=0;args[i]!=NULL;i++){
         if(strcmp(args[i],"|")==0){
@@ -129,11 +129,27 @@ bool handlePipeline(char *args[]){
     close(fds[0]);
     close(fds[1]);
 
-    //wait for both children to finish
-    int status;
-    waitpid(pid1,&status,0);
-    waitpid(pid2,&status,0);
+    if(!background){
+        // wait for both child to finish
+        int status;
+        waitpid(pid1,&status,0);
+        waitpid(pid2,&status,0);
+    }
+    else{
+        // background pipeline: do not wait here
+        printf("[background pipeline] pids: %d, %d\n", pid1, pid2);
+    }
     return true; // pipelining handled successfully.
+}
+
+bool backgroundDetect(char *args[]){
+    int last = 0;
+    while(args[last]!=NULL) last++;
+    if(last>0 && strcmp(args[last-1],"&")==0){
+        args[last-1] = NULL;
+        return true;
+    }
+    return false;
 }
 
 int main(){
@@ -172,9 +188,11 @@ int main(){
 
             continue;
         }
+        // ----- detect bacground present or not -----
+        bool background = backgroundDetect(args);
 
         // ----- Single pipeline support (cmd1 | cmd2) ---
-        bool pipe = handlePipeline(args);
+        bool pipe = handlePipeline(args,background);
         if(pipe==true) continue;
 
         // ----- I/O redirection parsing -----
@@ -246,9 +264,15 @@ int main(){
             exit(EXIT_FAILURE);
         }
         else if(pid>0){
-            int status;
-            waitpid(pid,&status,0);
-            printf("exit status: %d\n",status);
+            if(!background){
+                int status;
+                waitpid(pid,&status,0);
+                // printf("exit status: %d\n",status);
+            } 
+            else {
+                // background single command: don't wait
+                printf("[background] pid: %d\n", pid);
+            }
         }
         else{
             perror("fork failed");
