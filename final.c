@@ -8,12 +8,11 @@
 #include <stdbool.h>
 
 #define MAX_ARGS  10
-#define MAX_PATH 1024
 
-// ---------- Global for Ctrl+C handling ----------
+
 volatile sig_atomic_t is_waiting_for_input = 0;
 
-// ---------- Ctrl+C handler ----------
+// handling ctrl+c
 void handler(int sig) {
     const char msg_nl[] = "\n";
     write(STDOUT_FILENO, msg_nl, sizeof(msg_nl) - 1);
@@ -24,21 +23,21 @@ void handler(int sig) {
     }
 }
 
-// ---------- Parser: fills args[] and quoted[] ----------
+// parsing
 int parse_input(char *input, char **args, int *quoted) {
     int argc = 0;
     char *p = input;
 
     while (*p != '\0' && argc < MAX_ARGS) {
-        // Skip spaces/tabs
+        // Skip spaces and tabs
         while (*p == ' ' || *p == '\t') {
             p++;
         }
         if (*p == '\0') break;
 
-        // Quoted argument: "...."
+        // quoted
         if (*p == '"') {
-            p++;  // skip opening "
+            p++;  // opening
             args[argc] = p;
             quoted[argc] = 1;
 
@@ -51,7 +50,7 @@ int parse_input(char *input, char **args, int *quoted) {
             }
             argc++;
         }
-        // Normal (unquoted) argument
+        //normal unquoted argument
         else {
             args[argc] = p;
             quoted[argc] = 0;
@@ -71,7 +70,7 @@ int parse_input(char *input, char **args, int *quoted) {
     return argc;
 }
 
-// ---------- Redirection helper: < and > ----------
+// Input and output redirection
 void handle_redirection(char **args, int *quoted) {
     for (int j = 0; args[j] != NULL; j++) {
         // Skip tokens that were originally quoted
@@ -91,8 +90,8 @@ void handle_redirection(char **args, int *quoted) {
                 exit(1);
             }
             close(fd);
-            args[j] = NULL;  // cut off argv here
-            break;           // simple version: only first redirection
+            args[j] = NULL;
+            break;
         }
         else if (quoted[j] == 0 && strcmp(args[j], "<") == 0) {
             if (args[j + 1] == NULL) {
@@ -110,13 +109,13 @@ void handle_redirection(char **args, int *quoted) {
                 exit(1);
             }
             close(fd);
-            args[j] = NULL;  // cut off argv here
-            break;           // simple version
+            args[j] = NULL;
+            break;
         }
     }
 }
 
-// ---------- Pipeline handler: cmd1 | cmd2 ----------
+// handling pipeline
 bool handlePipeline(char *args[], int quoted[], int background) {
     int pipePos = -1;
 
@@ -135,7 +134,7 @@ bool handlePipeline(char *args[], int quoted[], int background) {
         return true; // pipeline detected but invalid
     }
 
-    // Split into left and right command arrays
+    // split into left and right command arrays
     char *leftArgs[MAX_ARGS];
     char *rightArgs[MAX_ARGS];
     int leftQuoted[MAX_ARGS];
@@ -165,7 +164,7 @@ bool handlePipeline(char *args[], int quoted[], int background) {
         return true;
     }
 
-    // Left child: writes to pipe
+    // Left child -> writes to pipe
     pid_t pid1 = fork();
     if (pid1 == 0) {
         if (dup2(fds[1], STDOUT_FILENO) < 0) {
@@ -186,7 +185,7 @@ bool handlePipeline(char *args[], int quoted[], int background) {
         return true;
     }
 
-    // Right child: reads from pipe
+    // Right child -> reads from pipe
     pid_t pid2 = fork();
     if (pid2 == 0) {
         if (dup2(fds[0], STDIN_FILENO) < 0) {
@@ -207,7 +206,7 @@ bool handlePipeline(char *args[], int quoted[], int background) {
         return true;
     }
 
-    // Parent: close pipe fds
+    // Parent -> close pipe fds
     close(fds[0]);
     close(fds[1]);
 
@@ -222,52 +221,44 @@ bool handlePipeline(char *args[], int quoted[], int background) {
     return true;
 }
 
-// ---------- main ----------
-int main(void) {
+int main() {
     char *input = NULL;
     size_t len = 0;
     char *args[MAX_ARGS];
     int quoted[MAX_ARGS];
-    char cwd[MAX_PATH];
-
 
     signal(SIGINT, handler);
 
     while (1) {
-        // Reap any completed background children
-        while (waitpid(-1, NULL, WNOHANG) > 0) {
-            // do nothing
-        }
+        // zoombie
+        while (waitpid(-1, NULL, WNOHANG) > 0) {}
 
-        if (getcwd(cwd, sizeof(cwd)) == NULL) {
-            perror("getcwd failed");
-            printf("myshell> ");
-        } else {
-            printf("%s$ ", cwd);
-        }
+        printf("myshell> ");
 
         is_waiting_for_input = 1;
+        // taking input
         ssize_t nread = getline(&input, &len, stdin);
-        is_waiting_for_input = 0;
 
-        if (nread == -1) { // EOF (Ctrl+D)
+        is_waiting_for_input = 0;
+        // ctrl+d
+        if (nread == -1) {
             break;
         }
+
         if (nread > 0 && input[nread - 1] == '\n') {
             input[nread - 1] = '\0';
         }
-
+        // parsing
         int argc = parse_input(input, args, quoted);
         if (argc == 0 || args[0] == NULL || args[0][0] == '\0') {
             continue;
         }
-
-        // exit builtin
+        // handling exit
         if (strcmp(args[0], "exit") == 0) {
             break;
         }
 
-        // cd builtin
+        // handling cd
         if (strcmp(args[0], "cd") == 0) {
             if (argc < 2) {
                 fprintf(stderr, "cd: missing argument\n");
@@ -277,7 +268,7 @@ int main(void) {
             continue;
         }
 
-        // Background '&' (only if unquoted)
+        // Background
         int back = 0;
         if (argc > 0 && quoted[argc - 1] == 0 && strcmp(args[argc - 1], "&") == 0) {
             back = 1;
@@ -285,7 +276,7 @@ int main(void) {
             argc--;
         }
 
-        // Pipeline handling (cmd1 | cmd2)
+        // Pipeline handling
         bool piped = handlePipeline(args, quoted, back);
         if (piped) {
             continue;
