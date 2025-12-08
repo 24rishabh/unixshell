@@ -13,7 +13,7 @@
 // Argument parsing including quoted strings -> done
 // I/O redirection (<, >) -> done
 // Built-ins: cd, exit -> done
-// Handling ctrl+c
+// Handling ctrl+c -> done
 // handle exit -> done
 // improving parsing and strip logic
 // handling enter -> done
@@ -106,37 +106,21 @@ int handle_redirection(char **args) {
     return 0;
 }
 
+int handle_builtins(char **args) {
+    //empty args
+    if (args[0] == NULL) return 1;
 
-
-int main(){
-    // Initialization of buffer and lengths
-    char* input = NULL;
-    size_t len = 0;
-    char *args[MAX_ARGS];
-    // handling ctrl+c
-    signal(SIGINT, handler);
-    // get the input from command line
-    while(1){
-    printf("myshell> ");
-    ssize_t nread = getline(&input, &len, stdin);
-    if (nread == -1) {
-            break;
-    }
-    if (input[nread - 1] == '\n') {
-        input[nread - 1] = '\0';
-    }
-    // tokenize -> convert and store it into array
-    int i = parse_input(input, args);
-    // strip quotes
-    strip_quotes(args);
+    //handle "exit"
     if (strcmp(args[0], "exit") == 0) {
-        break;
+        return 2; // Signal to BREAK
     }
-    // handling enter
+
+    //handle empty enter press
     if (args[0][0] == '\0') {
-        continue;
+        return 1; // Signal to CONTINUE
     }
-    // handling cd
+
+    //handle "cd"
     if (strcmp(args[0], "cd") == 0) {
         if (args[1] == NULL) {
             fprintf(stderr, "cd: missing argument\n");
@@ -144,20 +128,8 @@ int main(){
         else if (chdir(args[1]) != 0) {
             perror("cd");
         }
-    continue;
+        return 1; // Signal to CONTINUE
     }
-    printf("%d\n",i);
-    for (int j = 0; args[j] != NULL; j++) {
-        printf("args[%d] = %s\n", j, args[j]);
-    }
-    // checking for redirection function
-    // char *args[] = {"somecommand", ">", "out.txt", NULL};
 
-    // if (handle_redirection(args) != 0) {
-    //     fprintf(stderr, "handle_redirection failed\n");
-    //     return 1;
-    // }
-    // printf("Hello from redirected stdout!\n");
-}
-
+    return 0; // Not a built-in, proceed to external execution
 }
