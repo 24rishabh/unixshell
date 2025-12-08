@@ -12,8 +12,8 @@
 
 /*
 TODO LIST:
-1. I/O redirection: < and >  ----DONE----
-2. Pipelines: cmd1 | cmd2
+1. I/O redirection: < and >   <--------DONE
+2. Pipelines: cmd1 | cmd2     <--------DONE
 3. Background: &
 4. Ctrl-C handling
 */
@@ -53,6 +53,89 @@ void ArgParser(char *input,char *args[]){
     args[i] = NULL;
 }
 
+bool handlePipeline(char *args[]){
+    int pipePos = -1;
+    for(int i=0;args[i]!=NULL;i++){
+        if(strcmp(args[i],"|")==0){
+            pipePos = i;
+            break;
+        }
+    }
+
+    if(pipePos==-1) return false;
+    if(pipePos==0 || args[pipePos+1]==NULL){
+        fprintf(stderr,"Syntax Error: Invalid use of '|'\n");
+        return true;// pipeline detected but invalid
+    }
+    // Split args into leftArgs (before '|') and rightArgs (after '|')
+    char *leftArgs[MAX_ARGS];
+    char *rightArgs[MAX_ARGS];
+    int li = 0;
+    for(int i=0;i<pipePos;i++){
+        leftArgs[li++] = args[i];
+    }
+    leftArgs[li] = NULL;
+    int ri = 0;
+    for(int i=pipePos+1;args[i]!=NULL;i++){
+        rightArgs[ri++] = args[i];
+    }
+    rightArgs[ri] = NULL;
+
+    int fds[2];
+    if(pipe(fds)<0){
+        perror("pipe failed");
+        return true; // pipeline detected but pipe failed
+    }
+
+    pid_t pid1 = fork();
+    if(pid1==0){
+        if(dup2(fds[1],STDOUT_FILENO)<0){
+            perror("dup2 pipe failed for left command");
+            exit(EXIT_FAILURE);
+        }
+        close(fds[0]); // not used in this child
+        close(fds[1]);
+        execvp(leftArgs[0],leftArgs);
+        perror("execvp pipe failed for left command");
+        exit(EXIT_FAILURE);
+    }
+    else if(pid1<0){
+        perror("fork failed for left command");
+        close(fds[0]);
+        close(fds[1]);
+        return true;
+    }
+
+    pid_t pid2 = fork();
+    if(pid2==0){
+        if(dup2(fds[0],STDIN_FILENO)<0){
+            perror("dup2 pipe failed for right command");
+            exit(EXIT_FAILURE);
+        }
+        close(fds[0]);
+        close(fds[1]); // not used in this child
+        execvp(rightArgs[0],rightArgs);
+        perror("execvp failed for right command");
+        exit(EXIT_FAILURE);
+    }
+    else if(pid2<0){
+        perror("fork failed for right command");
+        close(fds[0]);
+        close(fds[1]);
+        return true;
+    }
+
+    //parent closes both the fds
+    close(fds[0]);
+    close(fds[1]);
+
+    //wait for both children to finish
+    int status;
+    waitpid(pid1,&status,0);
+    waitpid(pid2,&status,0);
+    return true; // pipelining handled successfully.
+}
+
 int main(){
     char input[MAX_INPUT];
     char *args[MAX_ARGS];
@@ -89,6 +172,10 @@ int main(){
 
             continue;
         }
+
+        // ----- Single pipeline support (cmd1 | cmd2) ---
+        bool pipe = handlePipeline(args);
+        if(pipe==true) continue;
 
         // ----- I/O redirection parsing -----
         int inDirect = 0, outDirect = 0;
