@@ -1,11 +1,13 @@
-#include <stdio.h>     
-#include <stdlib.h>    
-#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <stdbool.h>
 
-#define MAX_ARGS 10
+#define MAX_ARGS  10
 
 // Things to do
 // Parsing -> done
@@ -15,121 +17,156 @@
 // Built-ins: cd, exit -> done
 // Handling ctrl+c -> done
 // handle exit -> done
-// improving parsing and strip logic
 // handling enter -> done
 
 
-// strip quotes 
-void strip_quotes(char **args) {
-    for (int j = 0; args[j]; j++) {
-        char *s = args[j];
-        size_t len = strlen(s);
-        if (len >= 2 && s[0] == '\"' && s[len - 1] == '\"') {
-            s[len - 1] = '\0';   
-            args[j] = s + 1;     
-        }
-    }
-}
-// Parsing
-int parse_input(char* input, char** args){
-    int i = 0;
-    args[i] = input;
-    i++;
-    int in_quotes = 0;
-    for (int j = 0; input[j] != '\0' && i < MAX_ARGS; j++) {
-        // Toggle state if we see a quote
-        if (input[j] == '"') {
-            in_quotes = !in_quotes;
-        }
-        // Split on space only if we are not in quotes
-        else if (input[j] == ' ' && in_quotes == 0) {
-            input[j] = '\0';       // Replace space with null terminator
-            if (input[j+1] != '\0') {
-                args[i] = &input[j+1]; // Point to the character after the space
-                i++;
-            }
-        }
-    }
-    args[i] = NULL;
-    return i;
-}
+volatile sig_atomic_t is_waiting_for_input = 0;
 
-// ctrl + c
+// handling ctrl+c
 void handler(int sig) {
-    printf("\n");
+    const char msg_nl[] = "\n";
+    write(STDOUT_FILENO, msg_nl, sizeof(msg_nl) - 1);
+
+    if (is_waiting_for_input) {
+        const char msg_prompt[] = "myshell> ";
+        write(STDOUT_FILENO, msg_prompt, sizeof(msg_prompt) - 1);
+    }
 }
 
+// parsing
+int parse_input(char *input, char **args, int *quoted) {
+    int argc = 0;
+    char *p = input;
 
-// handling Input and output redirection
-int handle_redirection(char **args) {
-    int j = 0;
-    while (args[j] != NULL) {
-        if (strcmp(args[j], ">") == 0) {
-            if (args[j+1] == NULL) {
-                fprintf(stderr, "Expected filename after '>'\n");
-                return -1;
+    while (*p != '\0' && argc < MAX_ARGS) {
+        // Skip spaces and tabs
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        if (*p == '\0') break;
+
+        // quoted
+        if (*p == '"') {
+            p++;  // opening
+            args[argc] = p;
+            quoted[argc] = 1;
+
+            while (*p != '\0' && *p != '"') {
+                p++;
             }
-            int fd = open(args[j+1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (*p == '"') {
+                *p = '\0';  // terminate arg
+                p++;        // move past closing "
+            }
+            argc++;
+        }
+        //normal unquoted argument
+        else {
+            args[argc] = p;
+            quoted[argc] = 0;
+
+            while (*p != '\0' && *p != ' ' && *p != '\t') {
+                p++;
+            }
+            if (*p != '\0') {
+                *p = '\0';  // terminate arg
+                p++;        // move past '\0'
+            }
+            argc++;
+        }
+    }
+
+    args[argc] = NULL;
+    return argc;
+}
+
+// Input and output redirection
+void handle_redirection(char **args, int *quoted) {
+    for (int j = 0; args[j] != NULL; j++) {
+        // Skip tokens that were originally quoted
+        if (quoted[j] == 0 && strcmp(args[j], ">") == 0) {
+            if (args[j + 1] == NULL) {
+                fprintf(stderr, "Expected filename after '>'\n");
+                exit(1);
+            }
+            int fd = open(args[j + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd < 0) {
                 perror("open failed");
-                return -1;
+                exit(1);
             }
             if (dup2(fd, STDOUT_FILENO) < 0) {
                 perror("dup2 failed");
                 close(fd);
-                return -1;
+                exit(1);
             }
             close(fd);
-            args[j] = NULL;      // terminate argv here for execvp
+            args[j] = NULL;
+            break;
         }
-        else if (strcmp(args[j], "<") == 0) {
-            if (args[j+1] == NULL) {
+        else if (quoted[j] == 0 && strcmp(args[j], "<") == 0) {
+            if (args[j + 1] == NULL) {
                 fprintf(stderr, "Expected filename after '<'\n");
-                return -1;
+                exit(1);
             }
-            int fd = open(args[j+1], O_RDONLY);
+            int fd = open(args[j + 1], O_RDONLY);
             if (fd < 0) {
                 perror("open failed");
-                return -1;
+                exit(1);
             }
             if (dup2(fd, STDIN_FILENO) < 0) {
                 perror("dup2 failed");
                 close(fd);
-                return -1;
+                exit(1);
             }
             close(fd);
-            args[j] = NULL;      // terminate argv here
+            args[j] = NULL;
+            break;
         }
-
-        j++;
     }
-    return 0;
 }
 
-int handle_builtins(char **args) {
-    //empty args
-    if (args[0] == NULL) return 1;
+int main() {
+    char *input = NULL;
+    size_t len = 0;
+    char *args[MAX_ARGS];
+    int quoted[MAX_ARGS];
 
-    //handle "exit"
-    if (strcmp(args[0], "exit") == 0) {
-        return 2; // Signal to BREAK
-    }
+    signal(SIGINT, handler);
 
-    //handle empty enter press
-    if (args[0][0] == '\0') {
-        return 1; // Signal to CONTINUE
-    }
+    while (1) {
+        printf("myshell> ");
 
-    //handle "cd"
-    if (strcmp(args[0], "cd") == 0) {
-        if (args[1] == NULL) {
-            fprintf(stderr, "cd: missing argument\n");
-        } 
-        else if (chdir(args[1]) != 0) {
-            perror("cd");
+        is_waiting_for_input = 1;
+        // taking input
+        ssize_t nread = getline(&input, &len, stdin);
+
+        is_waiting_for_input = 0;
+        // ctrl+d
+        if (nread == -1) {
+            break;
         }
-        return 1; // Signal to CONTINUE
-    }
 
-    return 0; // Not a built-in, proceed to external execution
+        if (nread > 0 && input[nread - 1] == '\n') {
+            input[nread - 1] = '\0';
+        }
+        // parsing
+        int argc = parse_input(input, args, quoted);
+        if (argc == 0 || args[0] == NULL || args[0][0] == '\0') {
+            continue;
+        }
+        // handling exit
+        if (strcmp(args[0], "exit") == 0) {
+            break;
+        }
+        // handling cd
+        if (strcmp(args[0], "cd") == 0) {
+            if (argc < 2) {
+                fprintf(stderr, "cd: missing argument\n");
+            } else if (chdir(args[1]) != 0) {
+                perror("cd");
+            }
+            continue;
+        }
+
+    return 0;
 }
